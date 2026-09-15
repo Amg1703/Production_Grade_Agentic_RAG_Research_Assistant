@@ -1,10 +1,10 @@
 services:
     api:
         build: . 
-        container-name: rag-api
-        port:
+        container_name: rag-api
+        ports:
           - "8000:8000"
-        depends on:
+        depends_on:
           postgres:
             condition: service_healthy
           opensearch:
@@ -12,7 +12,7 @@ services:
           redis:
             condition: service_healthy
         healthcheck:
-          test: ["CMD-shell","python -c\"import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/api/health')\""]
+          test: ["CMD-SHELL","python -c\"import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/api/health')\""]
           interval: 30s
           timeout: 10s
           retries: 3
@@ -23,7 +23,7 @@ services:
           - OPENSEARCH_HOST=http://opensearch:9200
           - OPENSEARCH__HOST=http://opensearch:9200
           - OLLAMA_HOST=http://ollama:11434
-          - POSTGRES_DATABASE_URL=postgres+pscyopg2://postgres_user:postgres_password@postgres:5432/rag_db
+          - POSTGRES_DATABASE_URL=postgres+psycopg2://postgres_user:postgres_password@postgres:5432/rag_db
           - LANGFUSE_HOST=http://langfuse-web:3000
           - LANGFUSE_DEBUG=true
           - REDIS_HOST=redis
@@ -32,16 +32,17 @@ services:
     
     redis:
       image: redis:7-alpine
-      container-name: rag-redis
+      container_name: rag-redis
       ports:
         - "6379:6379"
-      volumes: redis_data:/data
+      volumes: 
+        - redis_data:/data
       command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-      health-check:
+      healthcheck:
         test: ["CMD","redis-server","ping"]
         interval: 10s
         timeout: 3s
-        retries: 3s
+        retries: 3
         start_period: 10s
       restart: unless-stopped
       networks:
@@ -49,43 +50,43 @@ services:
 
     opensearch:
       image: opensearchproject/opensearch:2.19.0
-      container-name: rag-opensearch
+      container_name: rag-opensearch
       ports:
         - "9200:9200"
         - "9600:9600"
       environment:
         - discovery.type=single_node
-        - OPENSEARCH_JAVA_OPTS = -Xms512 -Xms512
-        - DISABLE_SECURITY_PLUGIN = True
+        - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+        - DISABLE_SECURITY_PLUGIN=True
         - bootstrap.memory_lock=True
       ulimits:
         memlock:
-          - soft: -1
-          - hard: -1
+          soft: -1
+          hard: -1
       healthcheck:
-        test: ["CMD-shell","curl -f http://opensearch:9200/_cluster/health || exit 1"]
+        test: ["CMD-SHELL","curl -f http://opensearch:9200/_cluster/health || exit 1"]
         interval: 30s
         timeout: 10s
         retries: 5
         start_period: 60s
       restart: unless-stopped
-      volumes: opensearch_data:/usr/share/opensearch/data
+      volumes: 
+        - opensearch_data:/usr/share/opensearch/data
       networks:
         - rag-network
     
     opensearch-dashboards:
-      image: opensearch/opensearch-dashboards:2.19.0
-      container-name: rag-opensearch-dashboard
+      image: opensearchproject/opensearch-dashboards:2.19.0
+      container_name: rag-opensearch-dashboard
       ports:
         - "5601:5601"
       environment:
         - OPENSEARCH_HOSTS=http://opensearch:9200
-        - DISABLE_SECURITY_DASHBOARDS_PLUGIN=True
-      depends on:
-        opensearch:
-          condition: service_healthy 
+        - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      depends_on:
+        - opensearch
       healthcheck:
-        test: ["CMD-shell", "curl -f http://localhost:5601/api/status || exit 1"]
+        test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
         interval: 30s 
         timeout: 10s
         retries: 5
@@ -98,22 +99,22 @@ services:
       build:
         context: ./airflow 
         dockerfile: Dockerfile
-      container-name: rag-airflow 
+      container_name: rag-airflow 
       ports: 
       - "8080:8080"
       env_file:
       - .env
-      depends on:
+      depends_on:
         postgres:
           condition: service_healthy
       environment:
         - AIRFLOW_HOME=/opt/airflow
         - PYTHONPATH=/opt/airflow/src
-        - POSTGRES_DATABASE_URL = postgres+psycopg2://postgres_user:postgres_password@postgres:5432/rag-db
-        - OLLAMA_HOST= http://ollama:11434
-        - OPENSEARCH_HOST= http://opensearch:9200
-        - OPENSEARCH__HOST = http://opensearch:9200
-        - REDIS_HOST = redis
+        - POSTGRES_DATABASE_URL=postgres+psycopg2://postgres_user:postgres_password@postgres:5432/rag-db
+        - OLLAMA_HOST=http://ollama:11434
+        - OPENSEARCH_HOST=http://opensearch:9200
+        - OPENSEARCH__HOST=http://opensearch:9200
+        - REDIS_HOST=redis
       volumes:
         - ./airflow/dags:/opt/airflow/dags
         - airflow_logs:/opt/airflow/logs
@@ -131,7 +132,7 @@ services:
 
     ollama:
       image: ollama/ollama:0.11.2
-      container-name: rag-ollama
+      container_name: rag-ollama
       ports: 
         - "11434:11434"
       volumes:
@@ -142,13 +143,13 @@ services:
         timeout: 10s
         retries: 3
         start_period: 40s
-      restart: unless_stopped
+      restart: unless-stopped
       networks:
-        -rag-network
+        - rag-network
     
     postgres:
-      image: 
-      container-name: rag-postres
+      image: postgres:16-alpine
+      container_name: rag-postres
       ports:
         - "5432:5432"
       environment:
@@ -171,7 +172,7 @@ services:
     
     clickhouse:
       image: clickhouse/clickhouse-server:24.8-alpine
-      container-name: rag-clickhouse 
+      container_name: rag-clickhouse 
       environment:
         - CLICKHOUSE_DB=langfuse
         - CLICKHOUSE_USER=langfuse
@@ -189,10 +190,10 @@ services:
     
     langfuse-worker:
       image: docker.io/langfuse/langfuse-worker:2
-      container-name: rag-langfuse-worker
+      container_name: rag-langfuse-worker
       ports:
         - "3030:3030"
-      depends on:
+      depends_on:
         langfuse-postgres:
           condition: service_healthy
         langfuse-minio:
@@ -239,18 +240,18 @@ services:
     
     langfuse-web:
       image: docker.io/langfuse/langfuse:3.0
-      container-name: rag-langfuse-web
+      container_name: rag-langfuse-web
       ports:
         - "3001:3000"
-      depends on:
+      depends_on:
         langfuse-postgres:
           condition: service_healthy
         langfuse-redis:
           condition: service_healthy 
         langfuse-minio:
-          condtion: service_healthy
+          condition: service_healthy
         clickhouse: 
-          condtion: service_healthy 
+          condition: service_healthy 
       healthcheck:
         test: ["CMD-SHELL", "curl -f http://localhost:3000/api/public/health || exit 1"]
         interval: 30s
@@ -302,7 +303,7 @@ services:
       
     langfuse-postgres:
       image: postgres:17
-      container-name: rag-langfuse-postgres
+      container_name: rag-langfuse-postgres
       ports:
         - "5433:5432"
       restart: unless-stopped
@@ -312,7 +313,7 @@ services:
         test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
         interval: 3s
         timeout: 3s 
-        retries: 10s
+        retries: 10
         start_period: 40s
       environment: 
         - POSTGRES_USER=langfuse
@@ -321,13 +322,13 @@ services:
         - POSTGRES_HOST_AUTH_METHOD=password 
         - TZ=UTC
         - PGTZ=UTC
-      network:
+      networks:
         - rag-network 
     
     langfuse-redis:
       image: docker.io/redis:7
-      container-name: rag-langfuse-redis
-      port:
+      container_name: rag-langfuse-redis
+      ports:
         - "6380:6379"
       command: "--requirepass langfuse_redis_password"
       healthcheck:
@@ -337,16 +338,16 @@ services:
         retries: 10
         start_period: 100s 
       restart: unless-stopped
-      network:
+      networks:
         - rag-network 
     
     langfuse-minio: 
       image: docker.io/minio/minio
-      container-name: rag-langfuse-minio
+      container_name: rag-langfuse-minio
       ports: 
         - "9090:9000"
         - "9091:9001"
-      entry point: sh 
+      entrypoint: sh 
       command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
       volumes:
         - langfuse_v3_minio_data:/data
@@ -360,10 +361,10 @@ services:
         retries: 10 
         start_period: 5s 
       restart: unless-stopped 
-      network:
+      networks:
         - rag-network 
 
-volume:
+volumes:
   redis_data:
   postgres_data:
   opensearch_data:
@@ -373,7 +374,7 @@ volume:
   langfuse_v3_postgres_data:
   langfuse_v3_minio_data:
 
-network:
+networks:
   rag-network: 
     driver: bridge
 
