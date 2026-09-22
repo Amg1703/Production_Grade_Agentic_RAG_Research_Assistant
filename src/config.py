@@ -126,5 +126,12 @@ class Settings(BaseConfigSettings):
             raise ValueError(f"ENV VARIABLE ERROR: Postgres database URL must start with postgresql:// or postgresql+psycopg2:// not {v}")
         return v 
 
-def getting_settings() -> Settings:
+""" 
+    THIS IS THE MASTER FUNCTION EVERY OTHER FILE CALLS INSTEAD OF IMPORTING SETTINGS EVERYWHERE , OTHER FILES CALLS setting=get_setting
+    AND get_setting() does : 
+     -> Builds the Settings class 
+     -> Settings build ArxivSetting, PDFParsingSetting, ChunkingSetting, OpenSearchSetting, RedisSetting, TelegramSetting, etc
+     -> Pydantic Loads the default .env variables + .env overrides
+"""
+def get_settings() -> Settings:
     return Settings()
