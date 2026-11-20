@@ -4,7 +4,7 @@ An **agentic research assistant for AI papers**. It continuously ingests new arX
 
 The project is built the way production systems are: infrastructure and configuration first, then ingestion, search, generation and agents, layer by layer.
 
-> **Status: in progress.** The containerised infrastructure, typed configuration system and service scaffolding are in place (week 1). Ingestion, search and the agent layer are being built next — see [Roadmap](#roadmap).
+> **Status: in progress.** The containerised infrastructure, typed configuration, FastAPI service and the arXiv ingestion layer (client + daily Airflow DAG) are in place. Parsing, hybrid search and the agent layer are being built next — see [Roadmap](#roadmap).
 
 ---
 
@@ -67,8 +67,23 @@ All services share the `rag-network` bridge network. The API waits on **health c
 ### arXiv ingestion settings
 Polite, resilient fetching: 3 s rate-limit delay, 30 s timeout, up to 15 results per query in `cs.AI`, retry with exponential base delay, capped concurrent downloads (5) and parsing (1).
 
+### arXiv client (`src/services/arxiv/client.py`)
+- Queries the arXiv Atom API for the newest papers in a category (`sortBy=submittedDate`).
+- Enforces the rate limit between every request and parses entries into typed `ArxivPaper` models (id, title, authors, abstract, categories, published date, PDF URL).
+- Downloads PDFs into a local cache, skipping already-cached files, with exponential-backoff retries.
+- Standard library only (urllib + ElementTree), so it runs unchanged in the API and Airflow images.
+
 ### Factory pattern for clients
 `make_arxiv_client()` builds an `ArxivClient` with explicit settings so object construction lives in one place and is easy to swap in tests.
+
+### API endpoints (`src/main.py`)
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/v1/api/health` | Liveness probe used by the Compose health check |
+| GET | `/v1/papers/latest?max_results=5&category=cs.CL` | Newest arXiv papers as JSON |
+
+### Ingestion DAG (`airflow/dags/arxiv_ingestion.py`)
+Daily `arxiv_paper_ingestion` DAG (TaskFlow API, 2 retries): `fetch_latest_papers → download_pdfs`, reusing the same `src/` client mounted into the Airflow container.
 
 ---
 
@@ -76,6 +91,9 @@ Polite, resilient fetching: 3 s rate-limit delay, 30 s timeout, up to 15 results
 
 ```
 Production_Grade_Agentic_RAG_Research_Assistant/
+├── airflow/
+│   ├── Dockerfile              # Airflow 2.10 (standalone) + pydantic-settings
+│   └── dags/arxiv_ingestion.py # daily fetch → download DAG
 ├── compose.yml                 # 12-service stack: API, Postgres, OpenSearch(+Dashboards), Redis,
 │                               # Airflow, Ollama, Langfuse (web, worker, ClickHouse, Postgres, Redis, MinIO)
 ├── dockerfile                  # multi-stage uv build → slim runtime
@@ -84,9 +102,9 @@ Production_Grade_Agentic_RAG_Research_Assistant/
 │   ├── main.py                 # FastAPI app
 │   ├── config.py               # typed settings tree (pydantic-settings)
 │   ├── exceptions.py           # domain exceptions
-│   ├── schemas/arxiv/paper.py  # paper schema
+│   ├── schemas/arxiv/paper.py  # ArxivPaper Pydantic model
 │   └── services/arxiv/
-│       ├── client.py           # arXiv API client
+│       ├── client.py           # arXiv API client (rate limit, Atom parsing, PDF cache + retries)
 │       └── factory.py          # make_arxiv_client()
 └── notebooks/
     ├── week1/week1.ipynb       # environment & infrastructure checks
@@ -152,7 +170,8 @@ uv run jupyter lab           # notebooks/week1 infrastructure checks
 ## Roadmap
 
 - [x] **Week 1 — Infrastructure:** Docker Compose stack, multi-stage image, typed configuration, health checks
-- [ ] **Week 2 — Ingestion:** arXiv client (rate limiting, retries), PDF download cache, Docling parsing, Postgres metadata, Airflow DAG
+- [x] **Week 2 — Ingestion (part 1):** arXiv client (rate limiting, Atom parsing, retries), PDF download cache, `/v1/papers/latest` endpoint, daily Airflow DAG
+- [ ] **Week 2 — Ingestion (part 2):** Docling parsing, Postgres paper metadata
 - [ ] **Week 3 — Search:** OpenSearch index mapping, BM25 keyword search
 - [ ] **Week 4 — Hybrid search:** chunking + Jina embeddings, vector field, BM25 + kNN fusion
 - [ ] **Week 5 — RAG:** prompt + Ollama generation with citations, streaming responses

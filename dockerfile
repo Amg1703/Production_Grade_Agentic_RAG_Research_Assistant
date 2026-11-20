@@ -10,10 +10,10 @@
 # WE ARE BUILDING THE IMAGE FROM GITHUB CONTAINER REGISTRY IN THE DOCKER HUB REGISTRY INSIDE ASTRAL-SG -> UV 
 # WHERE UV IS THE PYTHON PACKAGE THAT IS BEING USED BY THIS REPOSITORY 
 # THE IMAGE ALREADY COMES WITH UV AND THIS WILL BE THE BASE IMAGE 
-FROM ghcr.io/astral/uv python3.12-bookworm AS base 
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS base 
 
 # WE ARE SETTING THE WORKING DIRECTORY AS APP/ INSTEAD OF DOING CD .. 
-WORKDIR app/
+WORKDIR /app
 
 # COPY SOURCE FILE TARGET DIRECTORY 
 # SO HERE WE ARE COPYING OUR LOCAL DEVELOPMENT PROJECT FILE'S PYPROJECT.TOML AND UV.LOCK TO THE WORKING DIRECTORY NAMELY /APP, the ./ means: /app
@@ -39,25 +39,27 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 #                             --FROZEN IS MEANS USE THE UV.LOCK FILE EXACTLY AS IT IS AND DO NOT MODIFY 
 #                             -- NO DEV MEANS DO NOT INSTALL DEVELOPMENT DEPENDENCIES YOU MIGHT HAVE PRODUCTION: FASTAPI, UVICORN, ETC AND DEVELOPMENT: PYTEST, RUFF, MYPY
 #                                WHICH THE PRODUCTION DOCKER IMAGE DOESNT NEED THEREBY NOT INSTALLING IT TO KEEP THE RUNTIME ENVIRONMENT SMALLER
-RUN  --bind-type=cache, target=./root/.cache/uv
-     --bind-type=mount , source=uv.lock, target=/app/uv.lock/
-     --bind-type=mount, source=pyproject.toml, target=/app/pyproject.toml
-     uv sync --frozen --no-dev 
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-dev
 
 # WE ARE COPYING THE SOURCE CODE FROM THE LOCAL DEVELOPMENT SRC FOLDER INTO THE DOCKER CONTAINER WHERE IT WILL BE STORED IN THE /APP/SRC OF THE DOCKER CONTAINER 
 COPY src /app/src
 
-# 
-FROM python:3.12.8-slim AS FINAL 
+# RUNTIME STAGE: SLIM IMAGE WITH ONLY THE BUILT VIRTUALENV AND SOURCE CODE
+FROM python:3.12-slim-bookworm AS final
 
-ENV PYTHONBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 ARG VERSION=0.1.0
 ENV APP_VERSION=$VERSION
 
 WORKDIR /app
 
-COPY --FROM-BASED /app /app
+COPY --from=base /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-CMD ["uvicorn", "src.main", "--host" , "0.0.0.0", "--port", "8000", "--workers", "4"]
+EXPOSE 8000
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
